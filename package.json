@@ -1,0 +1,17 @@
+{
+  "name": "pharmatrust-dapp",
+  "version": "1.0.0",
+  "description": "Cold-Chain SLA Escrow with Inbound IoT Telemetry DApp",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:ganache": "hardhat run scripts/deploy.js --network ganache",
+    "start": "lite-server --baseDir=frontend"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.18",
+    "lite-server": "^2.6.1"
+  }
+}

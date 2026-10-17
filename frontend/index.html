@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PharmaTrust | Cold-Chain SLA Protocol</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.0/ethers.umd.min.js"></script>
+</head>
+<body>
+  <!-- Non-blocking Toast Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="container">
+    
+    <!-- Top Bar -->
+    <header class="header">
+      <div class="header-brand">
+        <h1>PharmaTrust</h1>
+        <span class="badge-neutral" id="networkBadge">Local Ganache</span>
+      </div>
+
+      <div class="header-actions">
+        <button id="connectBtn" class="btn btn-primary" onclick="connectWallet()">Connect MetaMask</button>
+        <div id="walletBalInfo" class="wallet-badge hidden">0.000 ETH</div>
+      </div>
+    </header>
+
+    <!-- Global Actor Switcher -->
+    <div class="actor-bar">
+      <div class="actor-select-group">
+        <label for="accountDropdown">Active Signer:</label>
+        <select id="accountDropdown" class="actor-select" onchange="onAccountDropdownChange(this.value)">
+          <option value="">(Connect MetaMask to load accounts)</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="requestAllAccounts()" title="Authorize multiple accounts from MetaMask">
+          Import All
+        </button>
+      </div>
+
+      <div class="active-identity-tag">
+        <span class="meta-label">Role:</span>
+        <span id="roleBadge" class="role-tag">Unregistered</span>
+        <code id="activeRoleAddress" class="addr-tag">0x...</code>
+      </div>
+    </div>
+
+    <!-- Contract Target Bar -->
+    <div class="contract-bar">
+      <div class="contract-info">
+        <span class="muted-label">Contract:</span>
+        <code id="activeContractCode" class="mono-text">0x4b33...d61F</code>
+        <button class="btn-link" onclick="toggleContractEdit()">Change Target</button>
+      </div>
+      <div id="contractEditDrawer" class="contract-edit-box hidden">
+        <input type="text" id="contractAddressInput" placeholder="Enter deployed PharmaTrust 0x address" />
+        <button class="btn btn-secondary btn-sm" onclick="saveContractAddress()">Apply</button>
+      </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="tab-dispatch" onclick="switchTab('tab-dispatch')">
+        1. Dispatch Cargo
+      </button>
+      <button class="tab-btn" data-tab="tab-custody" onclick="switchTab('tab-custody')">
+        2. Accept Custody
+      </button>
+      <button class="tab-btn" data-tab="tab-telemetry" onclick="switchTab('tab-telemetry')">
+        3. IoT Telemetry
+      </button>
+      <button class="tab-btn" data-tab="tab-ledger" onclick="switchTab('tab-ledger')">
+        4. Ledger & Settlement
+      </button>
+      <button class="tab-btn" data-tab="tab-directory" onclick="switchTab('tab-directory')">
+        5. Directory & Roles
+      </button>
+    </nav>
+
+    <!-- Tab 1: Shipper Dispatch -->
+    <section id="tab-dispatch" class="tab-pane active">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Shipper: Cargo Dispatch & Escrow Funding</h2>
+          <p>Initializes an immutable shipment on-chain and locks shipping fee escrow.</p>
+        </div>
+
+        <div class="panel-body">
+          <div class="field">
+            <label for="shipCargo">Cargo Description</label>
+            <input type="text" id="shipCargo" placeholder="e.g. mRNA Vaccine Vials Batch #104" />
+          </div>
+
+          <div class="field">
+            <label for="shipDest">Destination Checkpoint</label>
+            <input type="text" id="shipDest" placeholder="e.g. ColdHub Bengaluru Terminal 2" />
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="carrierSelect">Designated Carrier</label>
+              <select id="carrierSelect" class="form-select" onchange="onCarrierSelectChange(this.value)">
+                <option value="">-- Choose Registered Carrier --</option>
+              </select>
+              <input type="text" id="shipCarrier" placeholder="Or enter carrier 0x... address" style="margin-top: 6px;" />
+            </div>
+
+            <div class="field">
+              <label for="sensorSelect">Authorized IoT Sensor</label>
+              <select id="sensorSelect" class="form-select" onchange="onSensorSelectChange(this.value)">
+                <option value="">-- Choose Registered Sensor --</option>
+              </select>
+              <input type="text" id="shipSensor" placeholder="Or enter sensor 0x... address" style="margin-top: 6px;" />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="shipMinTemp">Minimum Safe Temperature (°C)</label>
+              <input type="number" id="shipMinTemp" placeholder="e.g. -25" />
+            </div>
+            <div class="field">
+              <label for="shipMaxTemp">Maximum Safe Temperature (°C)</label>
+              <input type="number" id="shipMaxTemp" placeholder="e.g. -15" />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="shipFee">Shipping Fee Escrow (ETH)</label>
+              <input type="number" step="0.001" id="shipFee" placeholder="e.g. 0.05" />
+            </div>
+            <div class="field">
+              <label for="shipBond">Required Carrier Collateral Bond (ETH)</label>
+              <input type="number" step="0.001" id="shipBond" placeholder="e.g. 0.02" />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="shipDuration">Transit Duration Window (Seconds)</label>
+              <input type="number" id="shipDuration" placeholder="e.g. 300" />
+            </div>
+            <div class="field">
+              <label for="shipLatePenalty">Late Delivery Penalty (ETH)</label>
+              <input type="number" step="0.001" id="shipLatePenalty" placeholder="e.g. 0.01" />
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" onclick="createShipment()">
+            Dispatch Cargo & Deposit Escrow
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: Carrier Custody -->
+    <section id="tab-custody" class="tab-pane">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Carrier: Physical Custody & Performance Bond</h2>
+          <p>Inspects the target shipment terms, loads required bond directly from contract, and locks collateral.</p>
+        </div>
+
+        <div class="panel-body">
+          <div class="field-row">
+            <div class="field">
+              <label for="carrierShipId">Target Shipment ID</label>
+              <div class="input-with-button">
+                <input type="number" id="carrierShipId" placeholder="e.g. 1" onchange="syncCarrierShipmentTerms()" />
+                <button class="btn btn-secondary btn-sm" onclick="syncCarrierShipmentTerms()">Fetch Terms</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="carrierStake">Required Collateral Bond (ETH)</label>
+              <input type="number" step="0.001" id="carrierStake" placeholder="Will load from contract on fetch" />
+              <small id="carrierStakeHint" class="input-hint">Enter shipment ID and fetch terms to verify exact bond.</small>
+            </div>
+          </div>
+
+          <div id="carrierTermsPreview" class="terms-preview-box hidden">
+            <div class="terms-row">
+              <span>Cargo:</span> <strong id="previewCargo">--</strong>
+            </div>
+            <div class="terms-row">
+              <span>Current Status:</span> <span id="previewStatus" class="badge-neutral">--</span>
+            </div>
+            <div class="terms-row">
+              <span>Designated Carrier:</span> <code id="previewCarrier">--</code>
+            </div>
+            <div class="terms-row">
+              <span>Mandatory Bond:</span> <strong id="previewBond">-- ETH</strong>
+            </div>
+          </div>
+
+          <button class="btn btn-secondary btn-block" onclick="acceptCustody()">
+            Stake Required Collateral & Accept Custody
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: IoT Oracle Telemetry -->
+    <section id="tab-telemetry" class="tab-pane">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>IoT Sensor: Environmental & Waypoint Telemetry</h2>
+          <p>Simulates inbound oracle streaming temperature and GPS checkpoint data.</p>
+        </div>
+
+        <div class="panel-body">
+          <div class="field-row">
+            <div class="field">
+              <label for="sensorShipId">Target Shipment ID</label>
+              <input type="number" id="sensorShipId" placeholder="e.g. 1" oninput="syncSensorThreshold()" />
+            </div>
+            <div class="field">
+              <label>On-Chain SLA Safe Window</label>
+              <div id="telemetrySlaDisplay" class="static-display">-- (enter ID to inspect)</div>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="customPingTemp">Temperature Reading (°C)</label>
+              <input type="number" id="customPingTemp" placeholder="e.g. -18" />
+            </div>
+            <div class="field">
+              <label for="customPingLoc">Current Location Checkpoint</label>
+              <input type="text" id="customPingLoc" placeholder="e.g. Highway-NH48-Mile84" />
+            </div>
+          </div>
+
+          <div class="field" style="margin-top: 10px;">
+            <button class="btn btn-primary btn-block" onclick="sendCustomPing()">
+              Log Telemetry Ping to Blockchain
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Ledger & Settlement -->
+    <section id="tab-ledger" class="tab-pane">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Shipment Ledger & Payout Settlement</h2>
+          <p>Query on-chain smart contract state, confirm delivery, and withdraw vaulted funds.</p>
+        </div>
+
+        <div class="panel-body">
+          <!-- Pull-Vault Banner -->
+          <div class="vault-panel">
+            <div class="vault-info">
+              <div class="vault-title">Pull-Payment Vault Balance</div>
+              <div class="vault-sub">Pull-pattern isolates balances to guard against reentrancy.</div>
+            </div>
+            <div class="vault-action">
+              <div id="vaultBalance" class="vault-amount">0.0000 ETH</div>
+              <button class="btn btn-primary btn-sm" onclick="withdrawVault()">Withdraw to Wallet</button>
+            </div>
+          </div>
+
+          <div class="query-row">
+            <input type="number" id="queryShipId" placeholder="Enter Shipment ID" />
+            <button class="btn btn-secondary" onclick="fetchShipment()">Query Ledger</button>
+          </div>
+
+          <div id="shipmentData" class="ledger-box">
+            <div class="ledger-empty">Enter a shipment ID and query to inspect on-chain state.</div>
+          </div>
+
+          <button class="btn btn-primary btn-block" onclick="confirmDelivery()">
+            Shipper: Confirm Delivery & Route Payout
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 5: Account Directory & Registration -->
+    <section id="tab-directory" class="tab-pane">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Account Directory & Role Registry</h2>
+          <p>Assign identifiers and roles to your addresses. These labels populate the dropdowns across all tabs.</p>
+        </div>
+
+        <div class="panel-body">
+          <div class="directory-add-box">
+            <h3>Register or Label an Account</h3>
+            <div class="field">
+              <label for="regConnectedAccountSelect">Quick Select from Connected Accounts</label>
+              <select id="regConnectedAccountSelect" class="form-select" onchange="if(this.value) document.getElementById('regAddress').value = this.value">
+                <option value="">-- Choose an account to register --</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="regAddress">Ethereum Hex Address</label>
+                <input type="text" id="regAddress" placeholder="0x..." />
+              </div>
+              <div class="field">
+                <label for="regRole">Designated Role</label>
+                <select id="regRole" class="form-select">
+                  <option value="Shipper">Shipper</option>
+                  <option value="Carrier">Carrier</option>
+                  <option value="IoT Sensor">IoT Sensor</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="regLabel">Identifier / Friendly Name</label>
+              <input type="text" id="regLabel" placeholder="e.g. PharmaCorp Main, Express Fleet #12, ColdTracker Sensor" />
+            </div>
+            <button class="btn btn-secondary" onclick="registerAccount()">Save to Directory</button>
+          </div>
+
+          <div class="directory-list-box">
+            <h3>Registered Participant Directory</h3>
+            <div id="directoryTable" class="directory-table">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stowaway Bottom Bar for Audit Logs -->
+    <div class="stowaway-footer">
+      <div class="stowaway-bar" onclick="toggleAuditDrawer()">
+        <div class="stowaway-status">
+          <span class="stowaway-dot"></span>
+          <span id="stowawayLastLog">System ready. Connect MetaMask.</span>
+        </div>
+        <button class="btn-link-stowaway" id="stowawayToggleBtn">Show Audit Stream &uarr;</button>
+      </div>
+      <div id="stowawayDrawer" class="stowaway-drawer hidden">
+        <div class="drawer-header">
+          <span>Transaction & Event Audit Stream</span>
+          <button class="btn-link" onclick="clearTerminal()">Clear</button>
+        </div>
+        <div id="consoleLog" class="terminal-body">
+          <div>> System initialized. Ready.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
