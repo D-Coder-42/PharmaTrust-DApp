@@ -1,14 +1,28 @@
 {
-  "name": "pharmatrust-dapp",
+  "name": "pharmatrust-protocol",
   "version": "1.0.0",
-  "description": "Cold-Chain SLA Escrow with Inbound IoT Telemetry DApp",
+  "description": "Autonomous Cold-Chain Escrow Protocol with IoT Hardware Telematics and SLA Enforcement",
+  "main": "contracts/PharmaTrust.sol",
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
+    "test:verbose": "hardhat test --verbose",
+    "clean": "hardhat clean",
     "deploy": "hardhat run scripts/deploy.js --network localhost",
     "deploy:ganache": "hardhat run scripts/deploy.js --network ganache",
     "start": "lite-server --baseDir=frontend"
   },
+  "keywords": [
+    "ethereum",
+    "solidity",
+    "cold-chain",
+    "iot-telemetry",
+    "escrow-protocol",
+    "sla-enforcement",
+    "smart-contracts"
+  ],
+  "author": "Dhruv Phalod",
+  "license": "MIT",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "hardhat": "^2.22.18",

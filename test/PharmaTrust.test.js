@@ -5,7 +5,7 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
 describe("PharmaTrust Smart Contract Automated Test Suite", function () {
   let PharmaTrust;
   let pharmaTrust;
-  let shipper, carrier, sensor, attacker, other;
+  let shipper, carrier, sensor, unauthorizedSigner, other;
 
   // Standard shipment parameters
   const cargoDesc = "mRNA Vaccine Vials Batch #104";
@@ -27,7 +27,7 @@ describe("PharmaTrust Smart Contract Automated Test Suite", function () {
   };
 
   beforeEach(async function () {
-    [shipper, carrier, sensor, attacker, other] = await ethers.getSigners();
+    [shipper, carrier, sensor, unauthorizedSigner, other] = await ethers.getSigners();
     PharmaTrust = await ethers.getContractFactory("PharmaTrust");
     pharmaTrust = await PharmaTrust.deploy();
     await pharmaTrust.waitForDeployment();
@@ -336,7 +336,7 @@ describe("PharmaTrust Smart Contract Automated Test Suite", function () {
 
     it("should revert if an unauthorized caller attempts to log telemetry", async function () {
       await expect(
-        pharmaTrust.connect(attacker).logTelemetry(1, -18, "Unauthorized-Location")
+        pharmaTrust.connect(unauthorizedSigner).logTelemetry(1, -18, "Unauthorized-Location")
       ).to.be.revertedWith("Unauthorized: Caller is not authorized IoT sensor");
     });
   });
@@ -364,7 +364,7 @@ describe("PharmaTrust Smart Contract Automated Test Suite", function () {
       ).to.be.revertedWith("Unauthorized: Caller is not designated shipper");
 
       await expect(
-        pharmaTrust.connect(attacker).confirmDelivery(1)
+        pharmaTrust.connect(unauthorizedSigner).confirmDelivery(1)
       ).to.be.revertedWith("Unauthorized: Caller is not designated shipper");
     });
   });

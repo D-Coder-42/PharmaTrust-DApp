@@ -1,17 +1,24 @@
-// PharmaTrust DApp Logic (Ethers.js v6 & MetaMask)
-// Fully dynamic: User-driven role directory, tab navigation, exact collateral sync, stowaway audit drawer.
+/**
+ * @file app.js
+ * @description Frontend controller for the PharmaTrust cold-chain escrow protocol.
+ *              Integrates Ethers.js v6, MetaMask provider management, and on-chain state inspection.
+ */
+
+// ---------------------------------------------------------------------------
+// Protocol Configuration
+// ---------------------------------------------------------------------------
 
 const DEFAULT_CONTRACT_ADDRESS = "0x4b33F968f6eE34300990dD63fC77c06ea2E9d61F";
-const OLD_BROKEN_ADDRESS = "0xF916D80feCF48AE2746437833FDB646BE864090a";
 
-// Purge any stale broken address from localStorage
-let saved = localStorage.getItem("PHARMATRUST_CONTRACT_ADDRESS");
-if (saved && saved.toLowerCase() === OLD_BROKEN_ADDRESS.toLowerCase()) {
-  localStorage.removeItem("PHARMATRUST_CONTRACT_ADDRESS");
-  saved = null;
+function resolveContractAddress() {
+  const custom = localStorage.getItem("PHARMATRUST_CONTRACT_ADDRESS");
+  if (custom && ethers.isAddress(custom)) {
+    return custom;
+  }
+  return DEFAULT_CONTRACT_ADDRESS;
 }
 
-let CONTRACT_ADDRESS = (saved && ethers.isAddress(saved)) ? saved : DEFAULT_CONTRACT_ADDRESS;
+let CONTRACT_ADDRESS = resolveContractAddress();
 
 const CONTRACT_ABI = [
   "function createShipment(string _cargoDescription, string _destination, address _carrier, address _iotSensorAddress, int256 _minSafeTemp, int256 _maxSafeTemp, uint256 _carrierCollateralRequired, uint256 _transitDurationSeconds, uint256 _latePenalty) external payable returns (uint256)",
@@ -23,47 +30,53 @@ const CONTRACT_ABI = [
   "function getShipment(uint256 _id) external view returns (tuple(uint256 id, string cargoDescription, string destination, string lastRecordedLocation, address shipper, address carrier, address iotSensorAddress, int256 minSafeTemp, int256 maxSafeTemp, uint256 shippingFee, uint256 carrierCollateral, uint256 deliveryDeadline, uint256 latePenalty, int256 lastRecordedTemp, uint256 lastPingTimestamp, uint8 status))"
 ];
 
+const STATUS_MAP = ["Created", "InTransit", "Delivered", "Breached", "Settled"];
+
+// ---------------------------------------------------------------------------
+// Application State & Sanitization
+// ---------------------------------------------------------------------------
+
 let provider = null;
 let signer = null;
 let contract = null;
 let currentAccount = null;
 let connectedAccounts = [];
 
-// Role Directory: address.toLowerCase() -> { role, label, address }
-let savedDir = localStorage.getItem("PHARMATRUST_ROLE_DIRECTORY");
-let roleDirectory = {};
-if (savedDir) {
+function escapeHtml(str) {
+  if (typeof str !== "string") return String(str ?? "");
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function loadRoleDirectory() {
   try {
-    const parsed = JSON.parse(savedDir);
-    const hasOldAuto = Object.values(parsed).some(v => v.label && v.label.includes("(Acc "));
-    if (hasOldAuto) {
-      localStorage.removeItem("PHARMATRUST_ROLE_DIRECTORY");
-      roleDirectory = {};
-    } else {
-      roleDirectory = parsed;
+    const raw = localStorage.getItem("PHARMATRUST_ROLE_DIRECTORY");
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    const valid = {};
+    for (const [addr, entry] of Object.entries(parsed)) {
+      if (entry && entry.role && entry.label && ethers.isAddress(addr)) {
+        const role = String(entry.role);
+        if (["Shipper", "Carrier", "IoT Sensor"].includes(role)) {
+          valid[addr.toLowerCase()] = {
+            role,
+            label: String(entry.label),
+            address: entry.address || addr
+          };
+        }
+      }
     }
-  } catch (_) {
-    roleDirectory = {};
+    return valid;
+  } catch {
+    return {};
   }
 }
 
-// Purge any legacy attacker/auditor roles from saved roleDirectory
-if (roleDirectory) {
-  let directoryModified = false;
-  Object.keys(roleDirectory).forEach(k => {
-    const r = (roleDirectory[k].role || "").toLowerCase();
-    const l = (roleDirectory[k].label || "").toLowerCase();
-    if (r.includes("attacker") || r.includes("auditor") || l.includes("attacker") || l.includes("auditor")) {
-      delete roleDirectory[k];
-      directoryModified = true;
-    }
-  });
-  if (directoryModified) {
-    localStorage.setItem("PHARMATRUST_ROLE_DIRECTORY", JSON.stringify(roleDirectory));
-  }
-}
-
-const STATUS_MAP = ["Created", "InTransit", "Delivered", "Breached", "Settled"];
+let roleDirectory = loadRoleDirectory();
 
 // Tabs Navigation
 function switchTab(tabId) {
@@ -770,11 +783,11 @@ async function fetchShipment() {
       </div>
       <div class="ledger-line">
         <span class="ledger-label">Cargo Description</span>
-        <span class="ledger-value">${s.cargoDescription} &rarr; ${s.destination}</span>
+        <span class="ledger-value">${escapeHtml(s.cargoDescription)} &rarr; ${escapeHtml(s.destination)}</span>
       </div>
       <div class="ledger-line">
         <span class="ledger-label">Last Location Waypoint</span>
-        <span class="ledger-value"><code>${s.lastRecordedLocation}</code></span>
+        <span class="ledger-value"><code>${escapeHtml(s.lastRecordedLocation)}</code></span>
       </div>
       <div class="ledger-line">
         <span class="ledger-label">Last Temperature</span>

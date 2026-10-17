@@ -1,26 +1,26 @@
 # PharmaTrust: Decentralized Cold-Chain Telemetry & Autonomous SLA Escrow DApp
 
-PharmaTrust is a decentralized application designed to eliminate trust deficits and dispute cycles in pharmaceutical supply chains. The smart contract acts as an automated escrow and service-level-agreement (SLA) enforcement protocol for temperature-sensitive cargo (e.g., mRNA vaccines, insulin, biological reagents).
+PharmaTrust is a decentralized application designed to mitigate counterparty trust deficits and contractual dispute latency within pharmaceutical logistics. The smart contract serves as an autonomous escrow protocol and deterministic service-level-agreement (SLA) enforcement engine for temperature-sensitive biomedical assets (e.g., mRNA vaccines, insulin, and biologics).
 
-By integrating an inbound IoT hardware oracle that streams real-time environmental temperature and GPS checkpoint data, the smart contract autonomously penalizes logistics breaches—slashing the carrier's staked performance bond and issuing a full refund to the shipper upon thermal failure, or deducting delay penalties if deliveries miss agreed deadlines.
+By incorporating an authenticated inbound IoT hardware oracle that streams real-time environmental telemetry and geographic checkpoints, the protocol programmatically enforces logistics SLAs. Upon thermal excursion beyond configured thresholds, the contract autonomously penalizes the carrier by slashing the staked performance bond and issuing a full escrow refund to the shipper. Furthermore, temporal delays exceeding contractual transit allowances trigger liquidated damage deductions prior to final settlement.
 
 ---
 
 ## 1. Problem Statement & System Architecture
 
-### The Cold-Chain Problem
-Biological drugs and vaccines lose efficacy or become toxic if exposed to temperatures outside strict tolerances (e.g., -25°C to -15°C). In traditional centralized logistics:
-* Carriers can conceal refrigeration failures or unauthorized engine-off stops.
-* Shippers struggle to enforce financial accountability due to protracted legal arbitration.
-* Unexcused route delays and demurrage disputes frequently stall payments.
+### The Cold-Chain Integrity Problem
+Biopharmaceutical compounds exhibit extreme sensitivity to environmental variations, degrading rapidly or developing toxicity when exposed outside narrow thermal boundaries (e.g., -25°C to -15°C). Centralized logistics infrastructure suffers from systemic failure modes:
+* **Carrier Moral Hazard:** Logistics providers face asymmetric incentives and limited immediate financial liability if refrigeration units fail in transit.
+* **Dispute Latency & Legal Arbitration:** Post-facto thermal audit disputes require protracted administrative and legal proceedings, during which capital remains illiquid.
+* **Unmonitored Route Deviations & Delays:** Unscheduled transit halts and demurrage escalate spoilage risks without programmatic financial remedies.
 
-### The PharmaTrust Solution
-PharmaTrust implements an autonomous state-machine escrow governed by on-chain cryptographic rules:
-1. **Payable Dual-Lock Escrow:** The shipper deposits the freight fee into escrow, while the carrier stakes a refundable collateral penalty bond.
-2. **Inbound Hardware Oracle Telemetry:** An authorized onboard IoT sensor key-pair transmits signed temperature readings and GPS location waypoints.
-3. **Autonomous SLA Penalization:** If a temperature excursion occurs, the contract automatically slashes 100% of the carrier's collateral and refunds the shipper.
+### The PharmaTrust Architecture
+PharmaTrust replaces centralized dispute resolution with an autonomous state-machine escrow governed by on-chain cryptographic invariants:
+1. **Payable Dual-Lock Escrow:** The shipper deposits freight fees into contract escrow, while the carrier stakes a mandatory collateral bond prior to assuming custody.
+2. **Inbound Hardware Oracle Telemetry:** An authorized onboard IoT sensor key-pair transmits signed temperature readings and geographic checkpoints.
+3. **Autonomous SLA Slashing:** Upon detecting an out-of-bounds temperature reading, the contract immediately forfeits 100% of the carrier's collateral and refunds the shipper.
 4. **Time-Bounded Delay Penalties:** If transit succeeds thermally but exceeds the transit duration deadline (`deliveryDeadline`), an on-chain late penalty is deducted and refunded to the shipper.
-5. **Pull-over-Push Vault Isolation:** Withdrawable balances are quarantined in `pendingWithdrawals`, neutralizing reentrancy attacks.
+5. **Pull-over-Push Vault Isolation:** Withdrawable balances are quarantined in `pendingWithdrawals`, neutralizing reentrancy attacks and gas exhaustion vectors.
 
 ### State Transition Lifecycle
 
@@ -40,17 +40,17 @@ stateDiagram-v2
 
 ## 2. Smart Contract Architecture & Solidity Mechanics
 
-The smart contract (`PharmaTrust.sol`) implements core Ethereum concepts from the **Module 4 syllabus**:
+The smart contract (`PharmaTrust.sol`) implements core decentralized computing and Ethereum smart contract design paradigms:
 
-* **State Machine (`enum ShipmentStatus`):** Restricts operational flow across five discrete stages: `Created`, `InTransit`, `Delivered`, `Breached`, and `Settled`.
+* **Finite State Machine (`enum ShipmentStatus`):** Restricts operational flow across five discrete stages: `Created`, `InTransit`, `Delivered`, `Breached`, and `Settled`.
 * **Composite Record (`struct Shipment`):** Encapsulates shipment metadata, participants, financial commitments, telemetry thresholds, and tracking status.
-* **Signed Integers (`int256`):** Accommodates sub-zero pharmaceutical storage requirements down to -35°C.
+* **Signed Integer Arithmetic (`int256`):** Accommodates sub-zero pharmaceutical storage requirements down to -35°C without arithmetic underflow.
 * **Inbound Hardware Oracle Pattern:** Authenticates real-world sensor streams using a designated public key address (`iotSensorAddress`) representing the physical telematics unit.
 * **Time-Bounded Execution:** Uses `block.timestamp` to compute dynamic deadlines (`block.timestamp + _transitDurationSeconds`) and enforce late penalties.
 * **Payable Dual Escrow:** Accepts and tracks native Ether across multiple actors using `msg.value`.
 * **Pull-Payment Pattern:** Replaces direct transfers with a `pendingWithdrawals` mapping, preventing reentrancy vulnerabilities and unintended transaction reverts.
 * **Role-Based Access Modifiers:** Enforces strict execution rights via `onlyShipper`, `onlyCarrier`, `onlySensor`, and state check `inStatus`.
-* **Event Logging:** Emits indexed events (`ShipmentCreated`, `CustodyAccepted`, `TelemetryLogged`, `SLABreached`, `ShipmentDelivered`, `FundsWithdrawn`) for asynchronous UI consumption.
+* **Event Logging:** Emits indexed events (`ShipmentCreated`, `CustodyAccepted`, `TelemetryLogged`, `SLABreached`, `ShipmentDelivered`, `FundsWithdrawn`) for asynchronous UI consumption and off-chain indexing.
 
 ---
 
@@ -95,6 +95,8 @@ PharmaTrust-DApp/
 ├── test/
 │   ├── PharmaTrust.test.js        # Automated Hardhat / Mocha test suite
 │   └── test_cases_report.md       # Documented validation matrix with observed results
+├── scripts/
+│   └── deploy.js                  # Automated deployment pipeline with config sync
 ├── .gitignore
 ├── hardhat.config.js              # Hardhat configuration
 ├── package.json                   # Project metadata and development dependencies
@@ -106,7 +108,7 @@ PharmaTrust-DApp/
 
 ## 5. Comprehensive Test Validation Matrix
 
-The application underwent verification covering valid executions, invalid parameter rejections, and unauthorized access attempts in compliance with Section 1(v) of the assignment specifications:
+The smart contract protocol underwent comprehensive behavioral and security verification across valid functional transitions, negative parameter validation, and adversarial access control boundaries:
 
 | Test ID | Test Category | Target Function | Parameters / Caller | Expected Behavior | Observed Result | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
@@ -125,9 +127,9 @@ The application underwent verification covering valid executions, invalid parame
 
 ---
 
-## 6. Verification Evidence & Submission Screenshots
+## 6. Empirical Verification & Protocol Execution Artifacts
 
-The following visual documentation satisfies all verification criteria outlined in **Step 2 (Item 3)** of the Assignment 2 submission protocol:
+The following empirical verification artifacts document the execution trace across local blockchain deployment, cryptographic access controls, automated SLA penalization, and state inspection:
 
 ### 6.1 Smart Contract Compilation & Deployment
 
@@ -145,7 +147,7 @@ The following visual documentation satisfies all verification criteria outlined 
 
 ---
 
-### 6.3 Successful Transactions (Escrow, Bond, Telemetry & Settlement)
+### 6.3 State Transitions & Operational Execution (Escrow, Bond, Telemetry, and Settlement)
 
 ![Figure 3: Cargo Dispatch](screenshots/03_successful_dispatch_tx.png)
 
@@ -165,7 +167,7 @@ The following visual documentation satisfies all verification criteria outlined 
 
 ---
 
-### 6.4 Failed Transactions (Negative Testing: Unauthorized & Invalid Inputs)
+### 6.4 Exception Handling & Revert Invariant Enforcement (Negative Testing)
 
 ![Figure 7: Revert Unauthorized Sensor](screenshots/05_failed_tx_unauthorized_sensor.png)
 
@@ -177,7 +179,7 @@ The following visual documentation satisfies all verification criteria outlined 
 
 ---
 
-### 6.5 Blockchain Data Displayed Through User Interface
+### 6.5 On-Chain State Inspection via DApp Interface
 
 ![Figure 9: Data Retrieval Breached](screenshots/07_ui_data_retrieval_breached.png)
 
@@ -186,12 +188,3 @@ The following visual documentation satisfies all verification criteria outlined 
 ![Figure 10: Data Retrieval Delivered](screenshots/10_ui_data_retrieval_delivered.png)
 
 *Figure 10: Live audit query of Shipment #5 displaying on-chain state: Status `Delivered`, destination `ColdHub-Mumbai-Terminal2`, and carrier pull-vault credited with full `0.1000 ETH` payout.*
-
----
-
-## 7. Security Auditing & Academic Compliance
-
-* **Credential Safety Guarantee:** In accordance with Step 2, Item 5 of the assignment brief, this repository does not contain raw private keys, wallet seed phrases, mnemonic passphrases, or sensitive credential files.
-* **Reentrancy Protection:** All financial disbursements strictly adhere to the Checks-Effects-Interactions / Pull-Payment pattern. State updates precede external value calls, and withdrawable balances are quarantined in `pendingWithdrawals`.
-* **Integer Arithmetic:** Negative temperatures are handled safely using native Solidity signed integer primitives (`int256`) with EVM overflow checks enabled by default.
-* **Hardware Oracle Integrity:** External sensor telemetry is cryptographically restricted to a pre-registered Ethereum public address, preventing off-chain data fabrication by unauthenticated network peers.

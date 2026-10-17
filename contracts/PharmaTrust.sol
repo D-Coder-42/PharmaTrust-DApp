@@ -3,16 +3,38 @@ pragma solidity ^0.8.20;
 
 /**
  * @title PharmaTrust
- * @dev Autonomous cold-chain SLA escrow with IoT telemetry, GPS checkpoint logging, and delay penalties.
+ * @author PharmaTrust Core Architecture Team
+ * @notice Autonomous cold-chain SLA escrow protocol with inbound IoT hardware oracle verification,
+ *         cryptographic performance bonding, automated breach slashing, and delay penalties.
+ * @dev Implements an explicit 5-stage finite state machine and the pull-over-push payment pattern
+ *      for reentrancy-safe escrow disbursement.
  */
 contract PharmaTrust {
+    /// @notice Address of the contract deployer (retained for protocol provenance and audit trail)
     address public immutable platformOwner;
+
+    /// @notice Global counter tracking the total number of shipments initialized on-chain
     uint256 public shipmentCounter;
 
-    // 5-stage state machine (Module 4, Slide 89)
-    enum ShipmentStatus { Created, InTransit, Delivered, Breached, Settled }
+    /**
+     * @notice Operational lifecycle states for cargo shipments
+     * @value Created Initial state after shipper deposits freight fee; awaiting carrier custody acceptance
+     * @value InTransit Active transit state; carrier bond locked; IoT sensor streaming telemetry
+     * @value Delivered Cargo successfully received; final settlement calculated and routed to vault
+     * @value Breached Thermal SLA violated; carrier collateral slashed and routed to shipper vault
+     * @value Settled Final terminal state (reserved for archival tracking)
+     */
+    enum ShipmentStatus {
+        Created,
+        InTransit,
+        Delivered,
+        Breached,
+        Settled
+    }
 
-    // Composite structure tracking shipment telemetry & SLA terms (Module 4, Slide 90)
+    /**
+     * @notice Comprehensive data record representing an on-chain shipment agreement
+     */
     struct Shipment {
         uint256 id;
         string cargoDescription;
@@ -20,31 +42,70 @@ contract PharmaTrust {
         string lastRecordedLocation;
         address payable shipper;
         address payable carrier;
-        address iotSensorAddress;   // Inbound hardware oracle public address
-        int256 minSafeTemp;         // Signed integer for sub-zero thresholds in °C (Slide 76)
+        address iotSensorAddress;
+        int256 minSafeTemp;
         int256 maxSafeTemp;
-        uint256 shippingFee;        // Escrow funded by shipper (in Wei)
-        uint256 carrierCollateral;  // Performance bond staked by carrier (in Wei)
-        uint256 deliveryDeadline;   // Unix timestamp deadline
-        uint256 latePenalty;        // Penalty deducted if delivered past deadline
+        uint256 shippingFee;
+        uint256 carrierCollateral;
+        uint256 deliveryDeadline;
+        uint256 latePenalty;
         int256 lastRecordedTemp;
         uint256 lastPingTimestamp;
         ShipmentStatus status;
     }
 
-    // Mappings for record lookup and pull-payment vault (Module 4, Slide 86)
+    /// @notice Mapping from shipment ID to full shipment state record
     mapping(uint256 => Shipment) public shipments;
+
+    /// @notice Isolated pull-payment vault balances for secure beneficiary withdrawals
     mapping(address => uint256) public pendingWithdrawals;
 
-    // Events for frontend & block explorer monitoring (Module 4, Slide 96)
-    event ShipmentCreated(uint256 indexed id, string cargo, string destination, uint256 deadline, uint256 fee);
-    event CustodyAccepted(uint256 indexed id, address indexed carrier, uint256 collateralStaked);
-    event TelemetryLogged(uint256 indexed id, int256 currentTemp, string location, uint256 timestamp);
-    event SLABreached(uint256 indexed id, int256 breachTemp, uint256 collateralSlashed);
-    event ShipmentDelivered(uint256 indexed id, uint256 carrierPayout, uint256 delayPenaltyDeducted);
-    event FundsWithdrawn(address indexed user, uint256 amount);
+    // -------------------------------------------------------------------------
+    // Events
+    // -------------------------------------------------------------------------
 
-    // Modifiers for role-based access control and state validation (Module 4, Slide 94)
+    event ShipmentCreated(
+        uint256 indexed id,
+        string cargo,
+        string destination,
+        uint256 deadline,
+        uint256 fee
+    );
+
+    event CustodyAccepted(
+        uint256 indexed id,
+        address indexed carrier,
+        uint256 collateralStaked
+    );
+
+    event TelemetryLogged(
+        uint256 indexed id,
+        int256 currentTemp,
+        string location,
+        uint256 timestamp
+    );
+
+    event SLABreached(
+        uint256 indexed id,
+        int256 breachTemp,
+        uint256 collateralSlashed
+    );
+
+    event ShipmentDelivered(
+        uint256 indexed id,
+        uint256 carrierPayout,
+        uint256 delayPenaltyDeducted
+    );
+
+    event FundsWithdrawn(
+        address indexed user,
+        uint256 amount
+    );
+
+    // -------------------------------------------------------------------------
+    // Access Control & State Modifiers
+    // -------------------------------------------------------------------------
+
     modifier onlyShipper(uint256 _id) {
         require(msg.sender == shipments[_id].shipper, "Unauthorized: Caller is not designated shipper");
         _;
@@ -65,12 +126,31 @@ contract PharmaTrust {
         _;
     }
 
+    // -------------------------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------------------------
+
     constructor() {
         platformOwner = msg.sender;
     }
 
+    // -------------------------------------------------------------------------
+    // External Mutating Functions
+    // -------------------------------------------------------------------------
+
     /**
-     * @notice 1. Shipper initializes cargo record, sets SLA parameters, and funds shipping escrow
+     * @notice Initializes a new shipment escrow agreement with custom SLA parameters.
+     * @dev Locks the shipper's freight fee in contract escrow and computes an immutable delivery deadline.
+     * @param _cargoDescription Human-readable description or batch ID of the pharmaceutical cargo.
+     * @param _destination Destination facility or terminal identifier.
+     * @param _carrier Address of the logistics provider authorized to accept custody.
+     * @param _iotSensorAddress Public address of the physical telematics device authorized to stream sensor data.
+     * @param _minSafeTemp Minimum allowable temperature in degrees Celsius (supports sub-zero).
+     * @param _maxSafeTemp Maximum allowable temperature in degrees Celsius.
+     * @param _carrierCollateralRequired Amount of performance bond (in Wei) the carrier must stake to accept custody.
+     * @param _transitDurationSeconds Maximum duration allowance (in seconds) for delivery.
+     * @param _latePenalty Financial penalty (in Wei) deducted from carrier payout if delivered past deadline.
+     * @return uint256 The unique identifier of the newly initialized shipment.
      */
     function createShipment(
         string calldata _cargoDescription,
@@ -119,7 +199,9 @@ contract PharmaTrust {
     }
 
     /**
-     * @notice 2. Carrier accepts physical custody and stakes the required performance bond
+     * @notice Carrier stakes performance bond and assumes physical custody of the shipment.
+     * @dev Validates that msg.value matches exact required performance bond. Advances status to InTransit.
+     * @param _id Unique identifier of the target shipment.
      */
     function acceptCustodyAndStake(uint256 _id)
         external
@@ -135,8 +217,13 @@ contract PharmaTrust {
     }
 
     /**
-     * @notice 3. Inbound hardware oracle streams temperature and GPS checkpoint data
-     * @dev Automatically slashes carrier bond and refunds shipper on temperature excursion
+     * @notice Ingests real-time environmental telemetry from the authorized hardware oracle.
+     * @dev Evaluates ambient temperature against safe limits. If an excursion is detected,
+     *      the contract autonomously marks status as Breached, slashes carrier collateral,
+     *      and refunds the shipper by crediting both amounts into pendingWithdrawals[shipper].
+     * @param _id Target shipment identifier.
+     * @param _currentTemp Ambient temperature reading in degrees Celsius.
+     * @param _currentLocation Geographic waypoint or checkpoint identifier.
      */
     function logTelemetry(
         uint256 _id,
@@ -156,19 +243,20 @@ contract PharmaTrust {
 
         emit TelemetryLogged(_id, _currentTemp, _currentLocation, block.timestamp);
 
-        // Autonomous SLA enforcement check (Module 4, Slides 6, 8, 36)
         if (_currentTemp < s.minSafeTemp || _currentTemp > s.maxSafeTemp) {
             s.status = ShipmentStatus.Breached;
             uint256 totalRefundAndPenalty = s.shippingFee + s.carrierCollateral;
 
-            // Route all vaulted funds to shipper's pull-vault
             pendingWithdrawals[s.shipper] += totalRefundAndPenalty;
             emit SLABreached(_id, _currentTemp, s.carrierCollateral);
         }
     }
 
     /**
-     * @notice 4. Shipper confirms delivery: deducts delay penalty if late and routes net payout
+     * @notice Confirms successful delivery, evaluates punctuality against deadline, and routes payout.
+     * @dev If delivered after deliveryDeadline, latePenalty is deducted from carrier payout and refunded
+     *      to shipper. Net amounts are credited to pendingWithdrawals.
+     * @param _id Target shipment identifier.
      */
     function confirmDelivery(uint256 _id)
         external
@@ -181,21 +269,20 @@ contract PharmaTrust {
         uint256 penaltyDeducted = 0;
         uint256 carrierPayout = s.shippingFee + s.carrierCollateral;
 
-        // Delay penalty enforcement
         if (block.timestamp > s.deliveryDeadline) {
             penaltyDeducted = s.latePenalty;
             carrierPayout -= penaltyDeducted;
             pendingWithdrawals[s.shipper] += penaltyDeducted;
         }
 
-        // Net payout routed to carrier pull-vault
         pendingWithdrawals[s.carrier] += carrierPayout;
 
         emit ShipmentDelivered(_id, carrierPayout, penaltyDeducted);
     }
 
     /**
-     * @notice 5. Pull-pattern fund transfer to guard against reentrancy
+     * @notice Pull-pattern withdrawal mechanism isolating beneficiary payouts from state transitions.
+     * @dev Implements Checks-Effects-Interactions: zeroes pending balance before external ETH transfer.
      */
     function withdrawVault() external {
         uint256 amount = pendingWithdrawals[msg.sender];
@@ -208,8 +295,14 @@ contract PharmaTrust {
         emit FundsWithdrawn(msg.sender, amount);
     }
 
+    // -------------------------------------------------------------------------
+    // View Functions
+    // -------------------------------------------------------------------------
+
     /**
-     * @notice View function for frontend UI data retrieval
+     * @notice Retrieves the complete on-chain record for a given shipment.
+     * @param _id Target shipment identifier.
+     * @return Shipment struct containing all terms, status, and telemetry.
      */
     function getShipment(uint256 _id) external view returns (Shipment memory) {
         require(_id > 0 && _id <= shipmentCounter, "Invalid Input: Shipment ID out of range");
